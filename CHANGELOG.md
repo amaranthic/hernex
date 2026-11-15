@@ -6,6 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.1] - 2026-11-15
+
+### Summary
+
+Version `0.6.1` introduces built-in support for the NVIDIA NIM (NVIDIA Inference Microservices) provider adapter under the canonical identifier `nvidiaNim`.
+
+---
+
+### New Features
+
+- **NVIDIA NIM Provider Adapter (`nvidiaNim`)**:
+  - Added built-in `NvidiaNimProviderAdapter` using `@ai-sdk/openai-compatible`.
+  - Supports cloud-hosted NVIDIA API catalog (`https://integrate.api.nvidia.com/v1`) and self-hosted microservice endpoints with model specifications formatted as `nvidiaNim/org/model-name` (e.g. `nvidiaNim/meta/llama-3.1-70b-instruct`).
+  - Registered in `ProviderRegistry` as the 14th default supported provider.
+
+---
+
 ## [0.6.0] - 2026-11-15
 
 ### Summary

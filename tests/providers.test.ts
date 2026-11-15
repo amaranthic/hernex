@@ -12,7 +12,7 @@ import {
 } from "../src/index.js";
 
 describe("providerResolution", () => {
-  it("should contain all 13 supported providers in the default ProviderRegistry", () => {
+  it("should contain all 14 supported providers in the default ProviderRegistry", () => {
     const registry = new ProviderRegistry();
     const supported = registry.list();
     const expected = [
@@ -29,13 +29,31 @@ describe("providerResolution", () => {
       "openrouter",
       "compatible",
       "vercelgateway",
+      "nvidiaNim",
     ];
 
-    expect(supported).toHaveLength(13);
+    expect(supported).toHaveLength(14);
     for (const provider of expected) {
       expect(supported).toContain(provider);
       expect(registry.has(provider)).toBe(true);
     }
+  });
+
+  it("should resolve nvidiaNim models using NvidiaNimProviderAdapter", () => {
+    const registry = new ProviderRegistry();
+    const model = resolveModel(
+      "nvidiaNim/meta/llama-3.1-70b-instruct",
+      {
+        apiKey: "nvapi-test-key",
+        baseUrl: "https://integrate.api.nvidia.com/v1",
+      },
+      registry,
+    );
+
+    expect(model).toBeDefined();
+    expect((model as { readonly modelId?: string }).modelId).toBe(
+      "meta/llama-3.1-70b-instruct",
+    );
   });
 
   it("should return false for unknown providers in registry.has()", () => {

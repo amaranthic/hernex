@@ -18,6 +18,7 @@ import { alibabaProviderAdapter } from "./providers/alibaba.js";
 import { openRouterProviderAdapter } from "./providers/openrouter.js";
 import { compatibleProviderAdapter } from "./providers/compatible.js";
 import { vercelGatewayProviderAdapter } from "./providers/vercelGateway.js";
+import { nvidiaNimProviderAdapter } from "./providers/nvidiaNim.js";
 
 /**
  * Built-in provider adapters bundled with Hernex.
@@ -36,6 +37,7 @@ export const builtInAdapters: readonly ProviderAdapter[] = [
   openRouterProviderAdapter,
   compatibleProviderAdapter,
   vercelGatewayProviderAdapter,
+  nvidiaNimProviderAdapter,
 ];
 
 /**
