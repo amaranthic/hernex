@@ -36,8 +36,14 @@ const engine = new AgentEngine({
   baseUrl: "https://api.anthropic.com/v1",
   tools,
   instructions: "You are a concise assistant.",
+  hooks: {
+    onAuthorizeTool: async () => ({ decision: "allow" }),
+  },
 });
 ```
+
+> [!IMPORTANT]
+> All tools fail closed by default. Always provide `hooks.onAuthorizeTool` to authorize tool execution (see [Lifecycle Hooks & Authorization](hooks.md)).
 
 > [!NOTE]
 > Checkpointing requires persistent thread storage. Specifying `checkpoint: true` without `persist: true` (or a `threadStore`) throws a configuration error.

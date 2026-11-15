@@ -555,6 +555,7 @@ export async function* runTurn(
         let isAllowed = false;
         let denialReason =
           "Tool execution denied: no authorization policy configured. All tools fail closed by default.";
+        let effectiveParameters: unknown = parsedParameters;
 
         if (config.hooks?.onAuthorizeTool) {
           try {
@@ -566,6 +567,9 @@ export async function* runTurn(
 
             if (decision.decision === "allow") {
               isAllowed = true;
+              if (decision.updatedParameters !== undefined) {
+                effectiveParameters = decision.updatedParameters;
+              }
             } else if (decision.decision === "deny") {
               isAllowed = false;
               denialReason = decision.reason;
@@ -689,7 +693,7 @@ export async function* runTurn(
 
         const executionPromise = (async () => {
           try {
-            return await agentTool.execute(parsedParameters, executionContext);
+            return await agentTool.execute(effectiveParameters, executionContext);
           } catch (execError) {
             isToolError = true;
             return {
@@ -721,6 +725,87 @@ export async function* runTurn(
         }
 
         const durationMs = Date.now() - startTime;
+
+        if (config.hooks?.onPostTool) {
+          try {
+            const postOutcome = await config.hooks.onPostTool({
+              toolName: toolCall.toolName,
+              parameters: effectiveParameters,
+              result: executionResult,
+              isError: isToolError,
+              durationMs,
+              workingDirectory: config.workingDirectory,
+            });
+
+            if (postOutcome) {
+              if (postOutcome.updatedResult !== undefined) {
+                executionResult = postOutcome.updatedResult;
+                if (
+                  executionResult !== null &&
+                  typeof executionResult === "object" &&
+                  "isError" in executionResult &&
+                  (executionResult as { readonly isError?: unknown }).isError === true
+                ) {
+                  isToolError = true;
+                }
+              }
+
+              if (
+                postOutcome.additionalContext &&
+                postOutcome.additionalContext.trim().length > 0
+              ) {
+                const reminderBlock = `<system-reminder>\nPostTool:${toolCall.toolName} hook additional context:\n${postOutcome.additionalContext.trim()}\n</system-reminder>`;
+                if (typeof executionResult === "string") {
+                  executionResult = `${executionResult}\n\n${reminderBlock}`;
+                } else if (
+                  executionResult !== null &&
+                  typeof executionResult === "object" &&
+                  !Array.isArray(executionResult)
+                ) {
+                  executionResult = {
+                    ...(executionResult as Record<string, unknown>),
+                    systemReminder: reminderBlock,
+                  };
+                } else {
+                  executionResult = {
+                    result: executionResult,
+                    systemReminder: reminderBlock,
+                  };
+                }
+              }
+            }
+          } catch (postError) {
+            const postErrorInstance =
+              postError instanceof Error
+                ? postError
+                : new Error(String(postError));
+
+            yield {
+              type: "error",
+              origin: "hook",
+              error: toErrorInfo(postErrorInstance),
+              toolName: toolCall.toolName,
+              hookName: "onPostTool",
+              isFatal: false,
+            };
+
+            if (config.hooks?.onError) {
+              try {
+                await config.hooks.onError({
+                  error: postErrorInstance,
+                  origin: "hook",
+                  toolName: toolCall.toolName,
+                  hookName: "onPostTool",
+                  turnIndex,
+                  isFatal: false,
+                });
+              } catch {
+                // Do not recursively handle hook errors
+              }
+            }
+          }
+        }
+
         yield {
           type: "toolExecutionFinished",
           callId: toolCall.callId,

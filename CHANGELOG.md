@@ -6,6 +6,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.0] - 2026-11-15
+
+### Summary
+
+Version `0.6.0` modernizes and hardens the agent lifecycle hook subsystem. It introduces the native `onPostTool` hook contract for post-execution inspection, result mutation, secret redaction, and model feedback via standardized `<system-reminder>` XML tags. Additionally, it upgrades `onAuthorizeTool` to support input parameter mutation (`updatedParameters`), pipelines multi-layer composition in `composeAgentHooks`, and hardens error boundaries across tool executions.
+
+---
+
+### New Features
+
+- **Native `onPostTool` Hook Contract**:
+  - Added `PostToolContext` with `{ toolName, parameters, result, isError, durationMs, workingDirectory }`.
+  - Added `PostToolResult` with `{ updatedResult?, additionalContext? }`.
+  - Added `PostToolHook` type definition and integrated `onPostTool?: PostToolHook` into `AgentHooks`.
+  - Automatically formats `additionalContext` into standardized `<system-reminder>` XML blocks and attaches them to tool results for immediate model self-correction.
+  - Guarantees single-source-of-truth invariants: when `updatedResult` is returned, the sanitized output is persisted to `ThreadStore.appendTranscript`, emitted in `toolExecutionFinished` events, and passed to subsequent turn messages.
+
+- **`onAuthorizeTool` Input Parameter Mutation**:
+  - Upgraded `PermissionDecision` to optionally return `updatedParameters?: unknown`.
+  - Allows pre-tool authorization hooks to sanitize, normalize, or enrich tool parameters prior to execution.
+
+- **Deterministic Multi-Layer Hook Composition**:
+  - Enhanced `composeAgentHooks` to pipeline `updatedParameters` across authorization layers and `updatedResult` across post-tool layers.
+  - Aggregates multi-layer `additionalContext` entries with double-newlines.
+  - Isolated post-tool layer errors so failures in one hook layer do not halt execution of subsequent layers.
+
+### Hardening & Resilience
+
+- **Fault-Isolated Post-Tool Execution**:
+  - Wrapped `onPostTool` execution in try/catch blocks within `runTurn.ts`.
+  - Hook exceptions are emitted as diagnostic events (`origin: "hook"`, `isFatal: false`) and routed to `onError` without crashing the autonomous agent loop.
+
+---
+
 ## [0.5.2] - 2026-11-14
 
 ### Summary

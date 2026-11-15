@@ -211,7 +211,14 @@ describe("AgentEngine Core Invariants", () => {
       },
       onAuthorizeTool: (context) => {
         callLog.push(`authorize:${context.toolName}`);
-        return { decision: "allow" };
+        return { decision: "allow", updatedParameters: { sanitized: true } };
+      },
+      onPostTool: (context) => {
+        callLog.push(`postTool:${context.toolName}:${context.isError}`);
+        return {
+          updatedResult: { mutated: true },
+          additionalContext: "Check types",
+        };
       },
       onShouldStop: (context) => {
         callLog.push(`shouldStop:${context.finishReason}`);
@@ -235,6 +242,14 @@ describe("AgentEngine Core Invariants", () => {
       parameters: { filePath: "foo.ts", data: "test" },
       workingDirectory: "/tmp",
     });
+    hooks.onPostTool!({
+      toolName: "mockMutate",
+      parameters: { sanitized: true },
+      result: { written: true },
+      isError: false,
+      durationMs: 42,
+      workingDirectory: "/tmp",
+    });
     hooks.onShouldStop!({
       turnIndex: 1,
       finishReason: "completed",
@@ -254,6 +269,7 @@ describe("AgentEngine Core Invariants", () => {
     expect(callLog).toEqual([
       "beforeTurn:1",
       "authorize:mockMutate",
+      "postTool:mockMutate:false",
       "shouldStop:completed",
       "afterTurn:completed",
       "error:engine",
@@ -392,7 +408,20 @@ describe("AgentEngine Core Invariants", () => {
         injectedInstructions: "Instruction 1",
       }),
       onShouldStop: () => ({ shouldStop: true }),
-      onAuthorizeTool: () => ({ decision: "allow" }),
+      onAuthorizeTool: (ctx) => ({
+        decision: "allow",
+        updatedParameters: {
+          ...(ctx.parameters as Record<string, unknown>),
+          layer1: true,
+        },
+      }),
+      onPostTool: (ctx) => ({
+        updatedResult: {
+          ...(ctx.result as Record<string, unknown>),
+          step1: true,
+        },
+        additionalContext: "Linter check 1 passed",
+      }),
     };
 
     const layer2: AgentHooks = {
@@ -401,10 +430,29 @@ describe("AgentEngine Core Invariants", () => {
         injectedInstructions: "Instruction 2",
       }),
       onShouldStop: () => ({ shouldStop: false, reminderPrompt: "Keep going" }),
-      onAuthorizeTool: () => ({ decision: "allow" }),
+      onAuthorizeTool: (ctx) => ({
+        decision: "allow",
+        updatedParameters: {
+          ...(ctx.parameters as Record<string, unknown>),
+          layer2: true,
+        },
+      }),
+      onPostTool: (ctx) => ({
+        updatedResult: {
+          ...(ctx.result as Record<string, unknown>),
+          step2: true,
+        },
+        additionalContext: "Formatter applied",
+      }),
     };
 
-    const composed = composeAgentHooks([layer1, layer2]);
+    const layer3Throws: AgentHooks = {
+      onPostTool: () => {
+        throw new Error("Crashing post-tool hook layer");
+      },
+    };
+
+    const composed = composeAgentHooks([layer1, layer2, layer3Throws]);
 
     const beforeResult = await composed.onBeforeTurn!({
       turnIndex: 1,
@@ -426,10 +474,35 @@ describe("AgentEngine Core Invariants", () => {
 
     const authDecision = await composed.onAuthorizeTool!({
       toolName: "testTool",
-      parameters: {},
+      parameters: { base: true },
       workingDirectory: "/tmp",
     });
     expect(authDecision.decision).toBe("allow");
+    if (authDecision.decision === "allow") {
+      expect(authDecision.updatedParameters).toEqual({
+        base: true,
+        layer1: true,
+        layer2: true,
+      });
+    }
+
+    const postResult = await composed.onPostTool!({
+      toolName: "testTool",
+      parameters: { base: true },
+      result: { original: true },
+      isError: false,
+      durationMs: 15,
+      workingDirectory: "/tmp",
+    });
+    expect(postResult).toBeDefined();
+    expect(postResult?.updatedResult).toEqual({
+      original: true,
+      step1: true,
+      step2: true,
+    });
+    expect(postResult?.additionalContext).toBe(
+      "Linter check 1 passed\n\nFormatter applied",
+    );
   });
 
   it("serializes all event types to pure JSON without native Error leakage", () => {

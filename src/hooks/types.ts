@@ -97,7 +97,14 @@ export interface AuthorizeToolContext {
  * Authorization decision outcome returned by the authorization hook.
  */
 export type PermissionDecision =
-  | { readonly decision: "allow" }
+  | {
+      readonly decision: "allow";
+      /**
+       * Optional sanitized or enriched parameters to supply to tool execution.
+       * If omitted, the original parameters supplied by the model are used.
+       */
+      readonly updatedParameters?: unknown | undefined;
+    }
   | { readonly decision: "deny"; readonly reason: string };
 
 /**
@@ -106,6 +113,47 @@ export type PermissionDecision =
 export type AuthorizeToolHook = (
   context: AuthorizeToolContext,
 ) => Promise<PermissionDecision> | PermissionDecision;
+
+/**
+ * Context provided after a tool completes execution.
+ */
+export interface PostToolContext {
+  /** Name of the executed tool. */
+  readonly toolName: string;
+  /** Parameters supplied for the execution (post-authorization). */
+  readonly parameters: unknown;
+  /** Result payload produced by the tool execution. */
+  readonly result: unknown;
+  /** Whether the tool finished in an error or exception state. */
+  readonly isError: boolean;
+  /** Wall-clock execution duration in milliseconds. */
+  readonly durationMs: number;
+  /** Active working directory for the thread. */
+  readonly workingDirectory: string;
+}
+
+/**
+ * Optional modifications and feedback returned by a post-tool hook.
+ */
+export interface PostToolResult {
+  /**
+   * Transformed, sanitized, or truncated result replacing the original tool output.
+   * Persisted to the transcript and delivered to the model.
+   */
+  readonly updatedResult?: unknown | undefined;
+  /**
+   * Supplementary feedback or context (e.g. linter warnings, compiler diagnostics)
+   * to inject for the model's next inference step.
+   */
+  readonly additionalContext?: string | undefined;
+}
+
+/**
+ * Hook invoked immediately after tool execution resolves.
+ */
+export type PostToolHook = (
+  context: PostToolContext,
+) => Promise<PostToolResult | void> | PostToolResult | void;
 
 /**
  * Context provided when an unhandled error occurs during execution.
@@ -142,6 +190,8 @@ export interface AgentHooks {
   readonly onShouldStop?: ShouldStopHook | undefined;
   /** Invoked to authorize proposed tool execution. Fails closed by default if omitted. */
   readonly onAuthorizeTool?: AuthorizeToolHook | undefined;
+  /** Invoked immediately after tool execution to inspect/rewrite results and inject feedback. */
+  readonly onPostTool?: PostToolHook | undefined;
   /** Invoked when an unhandled error occurs during turn execution. */
   readonly onError?: ErrorHook | undefined;
 }

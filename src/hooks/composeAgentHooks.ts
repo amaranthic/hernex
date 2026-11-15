@@ -12,6 +12,8 @@ import type {
   StopDecision,
   AuthorizeToolContext,
   PermissionDecision,
+  PostToolContext,
+  PostToolResult,
   ErrorContext,
 } from "./types.js";
 
@@ -124,14 +126,25 @@ export function composeAgentHooks(layers: readonly AgentHooks[]): AgentHooks {
 
     onAuthorizeTool: activeLayers.some((layer) => layer.onAuthorizeTool)
       ? async (context: AuthorizeToolContext): Promise<PermissionDecision> => {
+          let currentParameters = context.parameters;
+          let hasModifiedParameters = false;
+
           for (const layer of activeLayers) {
             if (!layer.onAuthorizeTool) {
               continue;
             }
             try {
-              const decision = await layer.onAuthorizeTool(context);
+              const decision = await layer.onAuthorizeTool({
+                toolName: context.toolName,
+                parameters: currentParameters,
+                workingDirectory: context.workingDirectory,
+              });
               if (decision.decision === "deny") {
                 return decision;
+              }
+              if (decision.updatedParameters !== undefined) {
+                currentParameters = decision.updatedParameters;
+                hasModifiedParameters = true;
               }
             } catch (error) {
               const errorMessage =
@@ -142,7 +155,62 @@ export function composeAgentHooks(layers: readonly AgentHooks[]): AgentHooks {
               };
             }
           }
-          return { decision: "allow" };
+          return hasModifiedParameters
+            ? { decision: "allow", updatedParameters: currentParameters }
+            : { decision: "allow" };
+        }
+      : undefined,
+
+    onPostTool: activeLayers.some((layer) => layer.onPostTool)
+      ? async (context: PostToolContext): Promise<PostToolResult | void> => {
+          let currentResult = context.result;
+          let hasModifiedResult = false;
+          const contextList: string[] = [];
+
+          for (const layer of activeLayers) {
+            if (!layer.onPostTool) {
+              continue;
+            }
+            try {
+              const outcome = await layer.onPostTool({
+                toolName: context.toolName,
+                parameters: context.parameters,
+                result: currentResult,
+                isError: context.isError,
+                durationMs: context.durationMs,
+                workingDirectory: context.workingDirectory,
+              });
+
+              if (!outcome) {
+                continue;
+              }
+
+              if (outcome.updatedResult !== undefined) {
+                currentResult = outcome.updatedResult;
+                hasModifiedResult = true;
+              }
+
+              if (
+                outcome.additionalContext &&
+                outcome.additionalContext.trim().length > 0
+              ) {
+                contextList.push(outcome.additionalContext.trim());
+              }
+            } catch {
+              // A failure in a post-tool hook layer is contained and does not abort subsequent layers
+            }
+          }
+
+          if (!hasModifiedResult && contextList.length === 0) {
+            return undefined;
+          }
+
+          return {
+            ...(hasModifiedResult ? { updatedResult: currentResult } : {}),
+            ...(contextList.length > 0
+              ? { additionalContext: contextList.join("\n\n") }
+              : {}),
+          };
         }
       : undefined,
 

@@ -89,7 +89,7 @@ Both tools share a single process owner: [`TaskManager`](../src/tasks/TaskManage
 
 > [!WARNING]
 > **Bash is NOT a Filesystem Sandbox.**
-> Commands executed by `BashTool` run as the current operating system user with full host permissions. While Hernex sanitizes sensitive environment variables (stripping keys matching `KEY`, `SECRET`, `TOKEN`, `PASSWORD`), it does **not** sandbox host filesystem access. Always enforce policy via `onAuthorizeTool`.
+> Commands executed by `BashTool` run as the current operating system user with full host permissions. While Hernex sanitizes sensitive environment variables (stripping keys matching `KEY`, `SECRET`, `TOKEN`, `PASSWORD`), it does **not** sandbox host filesystem access. Always enforce policy via `onAuthorizeTool`, and inspect or redact command results via `onPostTool`.
 
 ### 4.1 Shell Command Execution (`BashTool`)
 

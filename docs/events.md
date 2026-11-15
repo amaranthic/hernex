@@ -98,7 +98,7 @@ for await (const event of engine.runTurn("Refactor src/storage.ts")) {
 - **`toolCallProposed`**: Emitted when the model proposes a tool invocation. Parameters contain raw, unvalidated model JSON input. Schema validation and authorization (`onAuthorizeTool`) occur subsequently before execution. Fields: `callId`, `toolName`, `parameters` (`JsonValue`).
 - **`toolExecutionStarted`**: Emitted immediately before tool execution begins. Fields: `callId`, `toolName`, `timestamp`.
 - **`toolExecutionDelta`**: Streaming live output chunks from long-running operations. Fields: `callId`, `toolName`, `chunk`.
-- **`toolExecutionFinished`**: Emitted when tool completes. Fields: `callId`, `toolName`, `result` (`JsonValue`), `isError`, `durationMs`.
+- **`toolExecutionFinished`**: Emitted when tool completes. If an `onPostTool` hook mutated the output, contains the post-processed sanitized result. Fields: `callId`, `toolName`, `result` (`JsonValue`), `isError`, `durationMs`.
 - **`checkpointCreated`**: Emitted after file changes are committed to a snapshot. Fields: `checkpointId`, `sequence`, `label`, `filesTouched`.
 
 ### 3.4 Errors & Retries

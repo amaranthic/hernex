@@ -47,7 +47,7 @@ for await (const event of engine.runTurn("Check working directory status")) {
 
 1. **Explicit Credentials**: All runtime calls require explicit, non-empty `apiKey` and `baseUrl`. There are no hidden ambient environment variable fallbacks.
 2. **First-Slash Model Parsing**: Models format as `provider/model_id` (e.g. `openrouter/openrouter/free`). Splitting occurs strictly on the first slash only.
-3. **Fail-Closed Authorization**: All tools require explicit authorization via `hooks.onAuthorizeTool`; omission denies execution.
+3. **Fail-Closed Authorization & Lifecycle Hooks**: All tools require explicit authorization via `hooks.onAuthorizeTool`; omission denies execution. Post-tool results can be inspected, sanitized, and mutated via `hooks.onPostTool`.
 4. **Host Shell Capability**: `BashTool` runs with the host user's permissions with environment sanitization. It is an authorized host shell capability, not a filesystem sandbox.
 5. **Raw SDK Subpath**: Direct Vercel AI SDK functions and schemas remain accessible via `@amaranthic/hernex/ai`.
 
