@@ -26,3 +26,14 @@ export {
   unwrapDuckDuckGoUrl,
   convertSnippetToMarkdown,
 } from "./internal/duckDuckGo.js";
+export * from "./LspTool.js";
+export {
+  type LspConfig,
+  type LspServerConfig,
+  type LspOperation,
+  type LspRequestOptions,
+  type LspResult,
+  defaultLspConfig,
+  DEFAULT_LSP_TIMEOUT_MS,
+  runLspRequest,
+} from "./internal/lsp.js";

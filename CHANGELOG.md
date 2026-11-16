@@ -6,6 +6,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.0] - 2026-11-16
+
+### Summary
+
+Version `0.7.0` introduces the on-demand Language Server Protocol (LSP) intelligence subsystem, providing compiler-grade semantic code analysis (`LspTool` and internal engine). Implemented with zero external protocol packages using raw JSON-RPC over stdio framing. Spawns servers on demand and exits cleanly per request with zero ambient background processes. Also exports post-tool execution hook types (`PostToolContext`, `PostToolResult`, `PostToolHook`) from the root entry point.
+
+---
+
+### New Features
+
+- **On-Demand Language Server Protocol Engine (`src/tools/internal/lsp.ts`)**:
+  - Implemented the LSP JSON-RPC wire protocol from scratch over standard I/O pipes per LSP specification 3.16/3.17 (`Content-Length: <n>\r\n\r\n<json>`) without third-party dependencies.
+  - Chunk-resilient frame accumulator (`createFrameReader`) parsing HTTP-style headers and extracting UTF-8 JSON bodies.
+  - On-demand process lifecycle: spawns the matching server binary per call, performs the handshake (`initialize` -> `initialized`), sends `textDocument/didOpen`, executes the operation, and terminates cleanly (`shutdown` -> `exit` -> stdin drain -> SIGKILL grace timeout). Zero ambient background daemons or retained memory.
+  - Built-in pre-configured `defaultLspConfig` covering 10 major language ecosystems:
+    - TypeScript / JavaScript (`typescript-language-server`)
+    - Python (`pyright-langserver`)
+    - Rust (`rust-analyzer`)
+    - Go (`gopls`)
+    - C / C++ (`clangd`)
+    - JSON (`vscode-json-language-server`)
+    - HTML (`vscode-html-language-server`)
+    - CSS / SCSS / LESS (`vscode-css-language-server`)
+    - YAML (`yaml-language-server`)
+    - Shell (`bash-language-server`)
+  - Enforces mandatory `extensions: string[]` on every server config entry.
+
+- **Model-Facing `LspTool` (`src/tools/LspTool.ts`)**:
+  - Implements the standard `AgentTool` contract under tool name `"lsp"`.
+  - Supports 7 semantic operations: `hover`, `goToDefinition`, `goToImplementation`, `findReferences`, `documentSymbol`, `workspaceSymbol`, and `diagnostics`.
+  - 1-based coordinate system (`line` and `character`) matching standard editor conventions, with internal conversion to 0-based wire indices.
+  - Formats results into clean, token-efficient Markdown with workspace-relative file paths and source positions.
+  - Opt-in design: not auto-registered in default `ToolRegistry` to prevent host environment binary assumptions; callers register it explicitly.
+
+- **Security & Stability Hardening**:
+  - Strict workspace containment via `resolvePathWithinWorkspace` preventing directory traversal or symlink escapes.
+  - 10MB maximum file size ceiling before server spawn to avoid buffer exhaustion.
+  - Pre-flight `PATH` binary verification via `which` to return actionable diagnostic messages if a server binary is not installed.
+  - Subprocess spawn error listeners avoiding unhandled `ENOENT` events.
+  - Exponential backoff retry loop for transient error code `-32801` (`ContentModified`).
+
+- **Lifecycle Hook Subsystem Exports**:
+  - Exported missing post-tool execution hook types from the primary root entry point in `src/index.ts`: `PostToolContext`, `PostToolResult`, and `PostToolHook`.
+
+---
+
 ## [0.6.1] - 2026-11-15
 
 ### Summary

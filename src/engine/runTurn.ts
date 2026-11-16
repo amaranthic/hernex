@@ -693,7 +693,10 @@ export async function* runTurn(
 
         const executionPromise = (async () => {
           try {
-            return await agentTool.execute(effectiveParameters, executionContext);
+            return await agentTool.execute(
+              effectiveParameters,
+              executionContext,
+            );
           } catch (execError) {
             isToolError = true;
             return {
@@ -744,7 +747,8 @@ export async function* runTurn(
                   executionResult !== null &&
                   typeof executionResult === "object" &&
                   "isError" in executionResult &&
-                  (executionResult as { readonly isError?: unknown }).isError === true
+                  (executionResult as { readonly isError?: unknown })
+                    .isError === true
                 ) {
                   isToolError = true;
                 }

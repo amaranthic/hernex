@@ -105,7 +105,7 @@ onAuthorizeTool: async ({ toolName, parameters }) => {
 
 ## 3. Post-Tool Execution & Output Transformation (`onPostTool`)
 
-The `onPostTool` hook executes immediately after a tool finishes running (whether successfully or in an error state), but *before* the result is committed to the conversation transcript or sent to the model.
+The `onPostTool` hook executes immediately after a tool finishes running (whether successfully or in an error state), but _before_ the result is committed to the conversation transcript or sent to the model.
 
 ```typescript
 export interface PostToolContext {
@@ -119,6 +119,7 @@ export interface PostToolContext {
 ```
 
 ### 3.1 Result Mutation (`updatedResult`)
+
 Hooks can replace or sanitize the output returned by a tool (e.g. redacting API keys, truncating giant outputs, or pretty-printing JSON). The mutated result is the single source of truth persisted in `ThreadStore` and sent to the LLM:
 
 ```typescript
@@ -129,6 +130,7 @@ onPostTool: async ({ result }) => {
 ```
 
 ### 3.2 Feedback & Context Injection (`additionalContext`)
+
 Hooks can inject high-priority feedback (such as linter warnings, compiler errors, or test results) directly into the agent's turn. Hernex automatically wraps `additionalContext` in standardized `<system-reminder>` XML tags, matching frontier agent conventions:
 
 ```typescript
@@ -142,6 +144,7 @@ onPostTool: async ({ toolName, isError }) => {
 ```
 
 When received by the model, the message is delivered alongside the tool output:
+
 ```xml
 [Tool Output]
 
@@ -152,6 +155,7 @@ Git branch is currently 'main'. Commit with care.
 ```
 
 ### 3.3 Fault Isolation
+
 Errors thrown inside `onPostTool` are contained. They are emitted as diagnostic events with `origin: "hook"` and routed to `onError` with `isFatal: false`. An unexpected failure in a formatting or linting hook will never crash the autonomous turn loop.
 
 ---

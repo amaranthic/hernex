@@ -68,6 +68,7 @@ export {
   grepInputSchema,
   webFetchInputSchema,
   webSearchInputSchema,
+  lspInputSchema,
   readFileDescription,
   writeFileDescription,
   editFileDescription,
@@ -75,8 +76,13 @@ export {
   taskManagerDescription,
   webFetchDescription,
   webSearchDescription,
+  lspDescription,
   defaultRetentionTtlMs,
   defaultMaxRetainedTasks,
+  LspTool,
+  defaultLspConfig,
+  DEFAULT_LSP_TIMEOUT_MS,
+  runLspRequest,
 } from "./tools/index.js";
 
 export type {
@@ -111,6 +117,12 @@ export type {
   DuckDuckGoSearchResult,
   SearchTimeFilter,
   SafeSearchLevel,
+  LspInput,
+  LspConfig,
+  LspServerConfig,
+  LspOperation,
+  LspRequestOptions,
+  LspResult,
 } from "./tools/index.js";
 
 // Threads & Stores
@@ -189,6 +201,9 @@ export type {
   AuthorizeToolContext,
   PermissionDecision,
   AuthorizeToolHook,
+  PostToolContext,
+  PostToolResult,
+  PostToolHook,
   ErrorContext,
   ErrorHook,
 } from "./hooks/index.js";

@@ -77,3 +77,28 @@ export const webSearchDescription =
   "Searches the web using DuckDuckGo with automatic redirect unwrapping, HTML-to-Markdown conversion via Turndown, " +
   "pagination, time filtering ('day', 'week', 'month', 'year'), SafeSearch moderation, region targeting, domain filtering, " +
   "and instant answer retrieval. Results are cached in memory for 15 minutes.";
+
+/**
+ * System prompt description for LspTool.
+ */
+export const lspDescription =
+  "Queries a Language Server Protocol (LSP) server for semantic code intelligence about a file. " +
+  "Spawns the appropriate language server binary on demand, performs the complete handshake, " +
+  "executes exactly one operation, and terminates the process immediately — no background daemons are retained.\n\n" +
+  "IMPORTANT USAGE GUIDANCE:\n" +
+  "- On-Demand Execution: Each invocation incurs a cold-start overhead while the language server spawns and initializes. " +
+  "Do NOT run this tool for routine or trivial tasks where simple text search suffices. Use 'grep', 'glob', or 'readFile' " +
+  "for locating text, browsing files, or inspecting basic structures.\n" +
+  "- When to Use: Reserve this tool for tasks requiring true compiler-grade semantic intelligence, such as resolving complex " +
+  "type signatures, finding all cross-file symbol references, jumping to abstract interface implementations, or verifying compilation diagnostics.\n\n" +
+  "Available operations:\n" +
+  "  hover             — Type signature and documentation at a cursor position.\n" +
+  "  goToDefinition    — Source location(s) where a symbol is defined.\n" +
+  "  goToImplementation— Concrete implementation(s) of an interface or abstract member.\n" +
+  "  findReferences    — All sites that reference a symbol across the workspace.\n" +
+  "  documentSymbol    — Full symbol outline tree of a file (classes, functions, vars…).\n" +
+  "  workspaceSymbol   — Search for symbols by name across the entire workspace.\n" +
+  "  diagnostics       — Compiler errors, warnings, and hints reported by the language server.\n\n" +
+  "Coordinate rules:\n" +
+  "- 'line' and 'character' are always 1-based (line 1, character 1 is the start of the file).\n" +
+  "- For file-level queries ('documentSymbol', 'workspaceSymbol', 'diagnostics'), pass line=1 and character=1.";

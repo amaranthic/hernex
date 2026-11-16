@@ -1,6 +1,6 @@
 # Tool Registry & Built-In Tools
 
-Hernex provides a structured tool registry and 9 built-in tools for workspace file manipulation, shell command execution, background process management, safe web content retrieval, and resilient web search.
+Hernex provides a structured tool registry with 9 default built-in tools (for workspace file manipulation, shell command execution, background task management, safe web retrieval, and web search) and an opt-in on-demand Language Server Protocol tool ([`LspTool`](#8-opt-in-semantic-intelligence-lsptool)) for compiler-grade code intelligence.
 
 ---
 
@@ -161,16 +161,16 @@ All outbound requests pass through [`ssrfGuard`](../src/tools/internal/ssrfGuard
 
 ### 7.2 Parameters & Input Schema
 
-| Parameter | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `query` | `string` | *(required)* | Search query terms or question. |
-| `limit` | `number` (1–25) | `10` | Maximum number of results to return. |
-| `offset` | `number` | `0` | Pagination offset index (e.g. `0` for page 1, `10` for page 2). |
-| `time` | `"all" \| "day" \| "week" \| "month" \| "year"` | `"all"` | Filters results by publication date range. |
-| `safeSearch` | `"strict" \| "moderate" \| "off"` | `"moderate"` | SafeSearch moderation level. |
-| `region` | `string` | `undefined` | Geographic region / language code (e.g. `"us-en"`, `"uk-en"`, `"in-en"`). |
-| `allowedDomains` | `string[]` | `undefined` | Restricts results strictly to the specified domains (e.g. `["github.com"]`). |
-| `blockedDomains` | `string[]` | `undefined` | Excludes results matching the specified domains. |
+| Parameter        | Type                                            | Default      | Description                                                                  |
+| :--------------- | :---------------------------------------------- | :----------- | :--------------------------------------------------------------------------- |
+| `query`          | `string`                                        | _(required)_ | Search query terms or question.                                              |
+| `limit`          | `number` (1–25)                                 | `10`         | Maximum number of results to return.                                         |
+| `offset`         | `number`                                        | `0`          | Pagination offset index (e.g. `0` for page 1, `10` for page 2).              |
+| `time`           | `"all" \| "day" \| "week" \| "month" \| "year"` | `"all"`      | Filters results by publication date range.                                   |
+| `safeSearch`     | `"strict" \| "moderate" \| "off"`               | `"moderate"` | SafeSearch moderation level.                                                 |
+| `region`         | `string`                                        | `undefined`  | Geographic region / language code (e.g. `"us-en"`, `"uk-en"`, `"in-en"`).    |
+| `allowedDomains` | `string[]`                                      | `undefined`  | Restricts results strictly to the specified domains (e.g. `["github.com"]`). |
+| `blockedDomains` | `string[]`                                      | `undefined`  | Excludes results matching the specified domains.                             |
 
 ### 7.3 Output Contract
 
@@ -207,4 +207,68 @@ const result = await searchTool.execute(
 );
 
 console.log(result.content); // Clean Turndown Markdown output
+```
+
+---
+
+## 8. Opt-In Semantic Intelligence (`LspTool`)
+
+[`LspTool`](../src/tools/LspTool.ts) (`lsp`) provides semantic, compiler-grade intelligence (type signatures, definitions, cross-file references, document symbols, and diagnostics) by executing Language Server Protocol (LSP) queries over stdio.
+
+> **Note**: `LspTool` is an **opt-in** tool and is **not** included in the default 9-tool suite registered by `new ToolRegistry({ includeDefaults: true })`. Because it requires language server binaries to be installed on the host system `PATH` and has cold-start spawn overhead, it must be registered explicitly.
+
+### 8.1 Architecture & Lifecycle
+
+- **On-Demand Execution**: Zero background daemons or ambient processes. Each tool invocation spawns the matching server binary, executes the JSON-RPC handshake (`initialize` → `initialized`), sends `textDocument/didOpen`, executes the operation, and terminates cleanly (`shutdown` → `exit` → graceful SIGKILL fallback).
+- **Wire Protocol**: Speaks raw LSP JSON-RPC (`Content-Length: <n>\r\n\r\n<json>`) over stdio without third-party protocol packages.
+- **Fail-Soft Boundaries**: Enforces path containment within the workspace root, rejects files exceeding 10MB, verifies binary presence on PATH before spawning, and retries transient `-32801` (`ContentModified`) responses with exponential backoff.
+
+### 8.2 Supported Operations
+
+| Operation            | Description                                                   | Coordinates Required         |
+| :------------------- | :------------------------------------------------------------ | :--------------------------- |
+| `hover`              | Type signature and documentation at a position                | Line & Character (1-based)   |
+| `goToDefinition`     | Source location(s) where a symbol is defined                  | Line & Character (1-based)   |
+| `goToImplementation` | Concrete implementation(s) of an interface or abstract member | Line & Character (1-based)   |
+| `findReferences`     | All locations referencing a symbol across the workspace       | Line & Character (1-based)   |
+| `documentSymbol`     | Full symbol outline tree of the target file                   | Pass `line: 1, character: 1` |
+| `workspaceSymbol`    | Fuzzy search for symbols across the workspace via `query`     | Pass `line: 1, character: 1` |
+| `diagnostics`        | Language server compiler errors, warnings, and hints          | Pass `line: 1, character: 1` |
+
+### 8.3 Built-In Server Configurations (`defaultLspConfig`)
+
+When instantiated without custom configuration, `LspTool` includes pre-configured mappings for 10 common language servers:
+
+| Language / Domain           | Server Command                        | Handled Extensions                           |
+| :-------------------------- | :------------------------------------ | :------------------------------------------- |
+| **TypeScript / JavaScript** | `typescript-language-server --stdio`  | `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs` |
+| **Python**                  | `pyright-langserver --stdio`          | `.py`, `.pyi`                                |
+| **Rust**                    | `rust-analyzer`                       | `.rs`                                        |
+| **Go**                      | `gopls`                               | `.go`                                        |
+| **C / C++**                 | `clangd --background-index`           | `.c`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`    |
+| **JSON**                    | `vscode-json-language-server --stdio` | `.json`, `.jsonc`                            |
+| **HTML**                    | `vscode-html-language-server --stdio` | `.html`, `.htm`                              |
+| **CSS**                     | `vscode-css-language-server --stdio`  | `.css`, `.scss`, `.less`                     |
+| **YAML**                    | `yaml-language-server --stdio`        | `.yaml`, `.yml`                              |
+| **Shell**                   | `bash-language-server start`          | `.sh`, `.bash`                               |
+
+### 8.4 Example Usage
+
+```typescript
+import { ToolRegistry, LspTool, type LspConfig } from "@amaranthic/hernex";
+
+const registry = new ToolRegistry({ includeDefaults: true });
+
+// Register with default 10 language servers:
+registry.register(new LspTool());
+
+// Or register with custom server overrides:
+const customConfig: LspConfig = {
+  typescript: {
+    command: "typescript-language-server",
+    args: ["--stdio"],
+    extensions: [".ts", ".tsx"],
+  },
+};
+registry.register(new LspTool(customConfig), { allowOverride: true });
 ```
