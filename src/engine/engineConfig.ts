@@ -12,6 +12,51 @@ import type { TaskManager } from "../tools/index.js";
 import type { ToolRegistry } from "../tools/index.js";
 
 /**
+ * Default maximum number of initial request / transport retries for language model calls.
+ */
+export const defaultMaxRetries = 10;
+
+/**
+ * Hard upper limit cap for maxRetries to prevent unbounded retry loops.
+ */
+export const maxAllowedMaxRetries = 15;
+
+/**
+ * Default maximum number of mid-stream provider error retries during streaming.
+ */
+export const defaultStreamRetries = 10;
+
+/**
+ * Hard upper limit cap for streamRetries to prevent unbounded retry loops.
+ */
+export const maxAllowedStreamRetries = 15;
+
+/**
+ * Resolves and clamps the effective retry count between 0 and maximum cap (15).
+ *
+ * @param requested - The explicitly requested retry count, if any.
+ * @param fallback - The fallback retry count if not requested.
+ * @param maxCap - The hard maximum upper bound cap (default: 15).
+ * @returns Clamped non-negative integer retry count.
+ *
+ * @example
+ * ```typescript
+ * const retries = resolveRetryCount(20, defaultMaxRetries, maxAllowedMaxRetries); // 15
+ * ```
+ */
+export function resolveRetryCount(
+  requested: number | undefined,
+  fallback: number,
+  maxCap: number = maxAllowedMaxRetries,
+): number {
+  const value = requested ?? fallback;
+  if (!Number.isFinite(value) || value < 0) {
+    return 0;
+  }
+  return Math.min(Math.floor(value), maxCap);
+}
+
+/**
  * Static configuration options for instantiating an AgentEngine.
  */
 export interface AgentEngineConfig {
@@ -76,6 +121,18 @@ export interface AgentEngineConfig {
    * Defaults to 25.
    */
   readonly maxSteps?: number | undefined;
+
+  /**
+   * Maximum number of initial request/transport retries for failed model calls.
+   * Automatically clamped to `maxAllowedMaxRetries` (15). Defaults to `defaultMaxRetries` (10).
+   */
+  readonly maxRetries?: number | undefined;
+
+  /**
+   * Maximum number of mid-stream provider error retries during streaming generation.
+   * Automatically clamped to `maxAllowedStreamRetries` (15). Defaults to `defaultStreamRetries` (10).
+   */
+  readonly streamRetries?: number | undefined;
 
   /**
    * Whether to persist the conversation thread, metadata, and transcript to disk.
@@ -152,6 +209,18 @@ export interface RunTurnOptions {
    * Maximum autonomous steps for this specific turn.
    */
   readonly maxSteps?: number;
+
+  /**
+   * Optional per-turn override for maximum request/transport retries.
+   * Automatically clamped to `maxAllowedMaxRetries` (15).
+   */
+  readonly maxRetries?: number;
+
+  /**
+   * Optional per-turn override for mid-stream provider error retries.
+   * Automatically clamped to `maxAllowedStreamRetries` (15).
+   */
+  readonly streamRetries?: number;
 
   /**
    * Optional abort signal for cancelling this specific turn.

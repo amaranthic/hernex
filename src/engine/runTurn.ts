@@ -8,7 +8,15 @@ import type { ModelMessage } from "../model/types.js";
 import type { AgentEvent, JsonValue, ErrorInfo } from "../events/index.js";
 import type { StepTokenUsage, TurnFinishReason } from "../events/stepEvents.js";
 import type { CheckpointCreatedEvent } from "../events/checkpointEvents.js";
-import type { AgentEngineConfig, RunTurnOptions } from "./engineConfig.js";
+import {
+  type AgentEngineConfig,
+  type RunTurnOptions,
+  defaultMaxRetries,
+  maxAllowedMaxRetries,
+  defaultStreamRetries,
+  maxAllowedStreamRetries,
+  resolveRetryCount,
+} from "./engineConfig.js";
 import type { ToolExecutionContext } from "../tools/ToolExecutionContext.js";
 import { AsyncEventQueue } from "./eventQueue.js";
 import { CURRENT_TRANSCRIPT_VERSION } from "../threads/transcriptMigration.js";
@@ -307,6 +315,18 @@ export async function* runTurn(
       const sdkToolDefinitions = config.tools.toSdkToolDefinitions();
       const hasTools = Object.keys(sdkToolDefinitions).length > 0;
 
+      const effectiveMaxRetries = resolveRetryCount(
+        options.maxRetries ?? config.maxRetries,
+        defaultMaxRetries,
+        maxAllowedMaxRetries,
+      );
+
+      const effectiveStreamRetries = resolveRetryCount(
+        options.streamRetries ?? config.streamRetries,
+        defaultStreamRetries,
+        maxAllowedStreamRetries,
+      );
+
       const streamOptions: HernexStreamTextOptions = {
         model: options.model ?? config.model,
         apiKey: options.apiKey ?? config.apiKey,
@@ -318,6 +338,8 @@ export async function* runTurn(
         ...(combinedInstructions ? { instructions: combinedInstructions } : {}),
         ...(hasTools ? { tools: sdkToolDefinitions } : {}),
         ...(reasoning ? { reasoning } : {}),
+        maxRetries: effectiveMaxRetries,
+        streamRetries: effectiveStreamRetries,
         ...(effectiveSignal ? { abortSignal: effectiveSignal } : {}),
         // Explicitly handle onError to prevent Vercel AI SDK from falling back to console.error(error).
         // Hernex's turn generator catch block handles logging, rollback, and event yielding.

@@ -127,7 +127,50 @@ Simultaneous turns on a single engine instance are strictly forbidden; starting 
 
 ---
 
-## 5. Cancellation & Abort Aggregation
+## 5. Request & Stream Resilience (`maxRetries` & `streamRetries`)
+
+Hernex provides built-in resilience against transient provider hiccups, rate limits, and network connection drops for both the initial HTTP handshake and mid-stream chunk delivery.
+
+### 5.1 Configuration Options & Invariants
+
+Both retry options can be set globally on `AgentEngineConfig` and overridden per turn via `RunTurnOptions`:
+
+| Parameter           | Default                       | Hard Limit                       | Scope & Behavior                                                                                                                                                                                                                                 |
+| :------------------ | :---------------------------- | :------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`maxRetries`**    | `10` (`defaultMaxRetries`)    | `15` (`maxAllowedMaxRetries`)    | **Transport & Request Failures**: Handles initial HTTP 429 rate limits, 500/502/503/504 gateway errors, socket resets, and timeouts. Employs exponential backoff and automatically respects provider `retry-after` / `retry-after-ms` headers.   |
+| **`streamRetries`** | `10` (`defaultStreamRetries`) | `15` (`maxAllowedStreamRetries`) | **Mid-Stream Provider Errors**: Handles provider errors emitted _after_ streaming has started (`chunk.type === "error"`). Reruns _only_ the current model step while preserving completed earlier steps, tool outputs, and conversational state. |
+
+> [!NOTE]
+> **Safety Clamping**: To prevent runaway request loops, all retry values are automatically clamped by `resolveRetryCount` to `[0, 15]`. Specifying values $> 15$ will be safely bounded to `15`. Specifying `0` completely disables retries.
+
+### 5.2 Example Configuration
+
+```typescript
+// Configure global defaults (or accept defaults of 10):
+const engine = new AgentEngine({
+  threadId: "resilient-thread",
+  workingDirectory: process.cwd(),
+  model: "openai/gpt-4o",
+  apiKey: process.env.OPENAI_API_KEY!,
+  baseUrl: "https://api.openai.com/v1",
+  tools,
+  maxRetries: 12, // clamped to 15 max
+  streamRetries: 5, // clamped to 15 max
+});
+
+// Or override on a per-turn basis:
+for await (const event of engine.runTurn({
+  userPrompt: "Analyze large dataset",
+  maxRetries: 15,
+  streamRetries: 10,
+})) {
+  // consume events...
+}
+```
+
+---
+
+## 6. Cancellation & Abort Aggregation
 
 `AgentEngine` aggregates abort signals using `AbortSignal.any`:
 
@@ -146,7 +189,7 @@ setTimeout(() => {
 
 ---
 
-## 6. Direct Subsystem Access
+## 7. Direct Subsystem Access
 
 Hernex does not duplicate store CRUD methods on the engine. Products interact directly with stores and managers exposed via engine getters:
 

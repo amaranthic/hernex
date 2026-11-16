@@ -6,6 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.1] - 2026-11-16
+
+### Summary
+
+Version `0.7.1` introduces built-in transport and stream resilience settings (`maxRetries` and `streamRetries`) with defaults of `10` and an automatic safety cap of `15`. Enhances error recovery for transient rate limits, gateway disconnects, and mid-stream provider failures without restarting completed steps.
+
+---
+
+### New Features
+
+- **Request & Stream Retries Resilience (`maxRetries` & `streamRetries`)**:
+  - Added `maxRetries?: number` to `AgentEngineConfig` and `RunTurnOptions` for transport and initial connection failures (HTTP 429, 500/502/503/504, connection timeouts) with exponential backoff and rate-limit header handling.
+  - Added `streamRetries?: number` to `AgentEngineConfig` and `RunTurnOptions` for mid-stream provider errors (`chunk.type === "error"`), recovering only the active step while preserving completed earlier steps and tool outputs.
+  - Set default retry counts to `10` (`defaultMaxRetries = 10` and `defaultStreamRetries = 10`).
+  - Added safety clamping via `resolveRetryCount` to enforce a hard maximum bound of `15` (`maxAllowedMaxRetries = 15` and `maxAllowedStreamRetries = 15`), preventing runaway retry loops while allowing `0` to disable retries.
+  - Exported `defaultMaxRetries`, `maxAllowedMaxRetries`, `defaultStreamRetries`, `maxAllowedStreamRetries`, and `resolveRetryCount` from the primary root entry point.
+
+---
+
 ## [0.7.0] - 2026-11-16
 
 ### Summary

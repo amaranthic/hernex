@@ -39,6 +39,14 @@ export type {
 // Microkernel Agent Engine
 export { AgentEngine } from "./engine/AgentEngine.js";
 
+export {
+  defaultMaxRetries,
+  maxAllowedMaxRetries,
+  defaultStreamRetries,
+  maxAllowedStreamRetries,
+  resolveRetryCount,
+} from "./engine/engineConfig.js";
+
 export type {
   AgentEngineConfig,
   RunTurnOptions,
