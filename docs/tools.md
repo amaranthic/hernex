@@ -213,62 +213,65 @@ console.log(result.content); // Clean Turndown Markdown output
 
 ## 8. Opt-In Semantic Intelligence (`LspTool`)
 
-[`LspTool`](../src/tools/LspTool.ts) (`lsp`) provides semantic, compiler-grade intelligence (type signatures, definitions, cross-file references, document symbols, and diagnostics) by executing Language Server Protocol (LSP) queries over stdio.
+[`LspTool`](../src/tools/LspTool.ts) (`lsp`) provides semantic, compiler-grade intelligence (type signatures, definitions, cross-file references, document symbols, and diagnostics) by orchestrating Language Server Protocol (LSP) queries against an in-memory process pool.
 
-> **Note**: `LspTool` is an **opt-in** tool and is **not** included in the default 9-tool suite registered by `new ToolRegistry({ includeDefaults: true })`. Because it requires language server binaries to be installed on the host system `PATH` and has cold-start spawn overhead, it must be registered explicitly.
+> **Note**: `LspTool` is an **opt-in** tool and is **not** included in the default 9-tool suite registered by `new ToolRegistry({ includeDefaults: true })`. Callers must supply an explicit `servers` configuration object. No default servers are hardcoded into Hernex.
 
-### 8.1 Architecture & Lifecycle
+### 8.1 Architecture & Process Safety
 
-- **On-Demand Execution**: Zero background daemons or ambient processes. Each tool invocation spawns the matching server binary, executes the JSON-RPC handshake (`initialize` → `initialized`), sends `textDocument/didOpen`, executes the operation, and terminates cleanly (`shutdown` → `exit` → graceful SIGKILL fallback).
-- **Wire Protocol**: Speaks raw LSP JSON-RPC (`Content-Length: <n>\r\n\r\n<json>`) over stdio without third-party protocol packages.
-- **Fail-Soft Boundaries**: Enforces path containment within the workspace root, rejects files exceeding 10MB, verifies binary presence on PATH before spawning, and retries transient `-32801` (`ContentModified`) responses with exponential backoff.
+- **Persistent Process Pool**: `LspTool` instantiates and manages an in-memory `LspProcessPool`. Server binaries are spawned lazily on first query and kept warm across invocations to avoid repeated startup overhead.
+- **Wire Protocol**: Communicates using `vscode-jsonrpc` over standard input and output streams.
+- **Idle Teardown**: Inactive server processes are automatically shut down after a configurable idle duration (`idleTimeoutMs`, defaulting to 5 minutes) to conserve system memory and CPU.
+- **Circuit Breaker**: Detects consecutive crash failures. If a server crashes 3 consecutive times during startup, the circuit breaker opens and refuses further respawns to avoid infinite crash loops.
+- **Zero Zombie Processes**: All spawned child process PIDs are registered globally. Handlers on `process.on("exit")`, `SIGINT`, `SIGTERM`, and `beforeExit` guarantee that all language server processes are cleanly terminated when the host process shuts down.
+- **Explicit Lifecycle Management**: Call `lspTool.dispose()` to immediately terminate all running server instances.
 
 ### 8.2 Supported Operations
 
-| Operation            | Description                                                   | Coordinates Required         |
-| :------------------- | :------------------------------------------------------------ | :--------------------------- |
-| `hover`              | Type signature and documentation at a position                | Line & Character (1-based)   |
-| `goToDefinition`     | Source location(s) where a symbol is defined                  | Line & Character (1-based)   |
-| `goToImplementation` | Concrete implementation(s) of an interface or abstract member | Line & Character (1-based)   |
-| `findReferences`     | All locations referencing a symbol across the workspace       | Line & Character (1-based)   |
-| `documentSymbol`     | Full symbol outline tree of the target file                   | Pass `line: 1, character: 1` |
-| `workspaceSymbol`    | Fuzzy search for symbols across the workspace via `query`     | Pass `line: 1, character: 1` |
-| `diagnostics`        | Language server compiler errors, warnings, and hints          | Pass `line: 1, character: 1` |
+| Operation            | Description                                                   | Coordinates Required       |
+| :------------------- | :------------------------------------------------------------ | :------------------------- |
+| `hover`              | Type signature and documentation at a position                | Line & Character (1-based) |
+| `goToDefinition`     | Source location(s) where a symbol is defined                  | Line & Character (1-based) |
+| `goToImplementation` | Concrete implementation(s) of an interface or abstract member | Line & Character (1-based) |
+| `findReferences`     | All locations referencing a symbol across the workspace       | Line & Character (1-based) |
+| `documentSymbol`     | Full symbol outline tree of the target file                   | Omitted / Optional         |
+| `workspaceSymbol`    | Search symbols across the workspace via optional `query`      | Omitted / Optional         |
+| `diagnostics`        | Language server compiler errors, warnings, and hints          | Omitted / Optional         |
 
-### 8.3 Built-In Server Configurations (`defaultLspConfig`)
+### 8.3 Smart Severity Precedence
 
-When instantiated without custom configuration, `LspTool` includes pre-configured mappings for 10 common language servers:
+Diagnostics results are formatted into clean Markdown with automatic severity hierarchy:
 
-| Language / Domain           | Server Command                        | Handled Extensions                           |
-| :-------------------------- | :------------------------------------ | :------------------------------------------- |
-| **TypeScript / JavaScript** | `typescript-language-server --stdio`  | `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs` |
-| **Python**                  | `pyright-langserver --stdio`          | `.py`, `.pyi`                                |
-| **Rust**                    | `rust-analyzer`                       | `.rs`                                        |
-| **Go**                      | `gopls`                               | `.go`                                        |
-| **C / C++**                 | `clangd --background-index`           | `.c`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`    |
-| **JSON**                    | `vscode-json-language-server --stdio` | `.json`, `.jsonc`                            |
-| **HTML**                    | `vscode-html-language-server --stdio` | `.html`, `.htm`                              |
-| **CSS**                     | `vscode-css-language-server --stdio`  | `.css`, `.scss`, `.less`                     |
-| **YAML**                    | `yaml-language-server --stdio`        | `.yaml`, `.yml`                              |
-| **Shell**                   | `bash-language-server start`          | `.sh`, `.bash`                               |
+- If **Errors** exist: Up to 5 errors are displayed in full, followed by a collapsed note summarizing any warnings or hints (e.g. `_(also has 3 warnings)_`).
+- If only **Warnings** exist: Up to 5 warnings are displayed in full, followed by a collapsed note for hints.
+- If clean: Outputs `Clean — 0 errors, 0 warnings.`
 
 ### 8.4 Example Usage
 
 ```typescript
-import { ToolRegistry, LspTool, type LspConfig } from "@amaranthic/hernex";
+import { ToolRegistry, LspTool, type LspToolConfig } from "@amaranthic/hernex";
 
 const registry = new ToolRegistry({ includeDefaults: true });
 
-// Register with default 10 language servers:
-registry.register(new LspTool());
-
-// Or register with custom server overrides:
-const customConfig: LspConfig = {
-  typescript: {
-    command: "typescript-language-server",
-    args: ["--stdio"],
-    extensions: [".ts", ".tsx"],
+// Register with explicit server configurations:
+const lspConfig: LspToolConfig = {
+  servers: {
+    typescript: {
+      command: "typescript-language-server",
+      args: ["--stdio"],
+      extensions: [".ts", ".tsx", ".js"],
+    },
+    rust: {
+      command: "rust-analyzer",
+      extensions: [".rs"],
+    },
   },
+  idleTimeoutMs: 300_000, // 5 minutes (default)
 };
-registry.register(new LspTool(customConfig), { allowOverride: true });
+
+const lspTool = new LspTool(lspConfig);
+registry.register(lspTool);
+
+// Clean up when shutting down the agent runtime:
+await lspTool.dispose();
 ```

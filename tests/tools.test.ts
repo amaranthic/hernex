@@ -38,7 +38,6 @@ import {
   convertSnippetToMarkdown,
   WriteFileTool,
   LspTool,
-  defaultLspConfig,
   lspInputSchema,
 } from "../src/tools/index.js";
 
@@ -1809,40 +1808,27 @@ describe("Built-in File & Shell Tools", () => {
   });
 
   describe("LspTool", () => {
-    it("validates defaultLspConfig contains all 10 standard language servers", () => {
-      const expectedKeys = [
-        "typescript",
-        "python",
-        "rust",
-        "go",
-        "clangd",
-        "json",
-        "html",
-        "css",
-        "yaml",
-        "shell",
-      ];
-
-      for (const key of expectedKeys) {
-        const config = defaultLspConfig[key];
-        expect(config).toBeDefined();
-        expect(typeof config?.command).toBe("string");
-        expect(Array.isArray(config?.extensions)).toBe(true);
-        expect(config?.extensions.length).toBeGreaterThan(0);
-        for (const ext of config!.extensions) {
-          expect(ext.startsWith(".")).toBe(true);
-        }
-      }
-    });
-
     it("validates lspInputSchema parsing and strict rules", () => {
-      const valid = lspInputSchema.safeParse({
+      const validHover = lspInputSchema.safeParse({
         operation: "hover",
         filePath: "src/index.ts",
         line: 10,
         character: 5,
       });
-      expect(valid.success).toBe(true);
+      expect(validHover.success).toBe(true);
+
+      const validDiagnostics = lspInputSchema.safeParse({
+        operation: "diagnostics",
+        filePath: "src/index.ts",
+      });
+      expect(validDiagnostics.success).toBe(true);
+
+      const validWorkspaceSymbol = lspInputSchema.safeParse({
+        operation: "workspaceSymbol",
+        filePath: "src/index.ts",
+        query: "MySymbol",
+      });
+      expect(validWorkspaceSymbol.success).toBe(true);
 
       const invalidOp = lspInputSchema.safeParse({
         operation: "unknownOp",
@@ -1862,7 +1848,14 @@ describe("Built-in File & Shell Tools", () => {
     });
 
     it("returns error message when target file does not exist", async () => {
-      const tool = new LspTool();
+      const tool = new LspTool({
+        servers: {
+          test: {
+            command: "echo",
+            extensions: [".ts"],
+          },
+        },
+      });
       const context = {
         threadId: "test-thread",
         toolCallId: "call_lsp_not_found",
@@ -1879,12 +1872,19 @@ describe("Built-in File & Shell Tools", () => {
         context,
       );
 
-      expect(result).toContain("LSP error:");
-      expect(result).toContain("File not found");
+      expect(result).toContain("LSP error: File not found");
+      await tool.dispose();
     });
 
     it("returns error message when filePath attempts to escape workspace", async () => {
-      const tool = new LspTool();
+      const tool = new LspTool({
+        servers: {
+          test: {
+            command: "echo",
+            extensions: [".ts"],
+          },
+        },
+      });
       const context = {
         threadId: "test-thread",
         toolCallId: "call_lsp_traversal",
@@ -1901,15 +1901,22 @@ describe("Built-in File & Shell Tools", () => {
         context,
       );
 
-      expect(result).toContain("LSP error:");
-      expect(result).toContain("Access denied");
+      expect(result).toContain("LSP error: Access denied");
+      await tool.dispose();
     });
 
     it("returns error message when file extension is not configured", async () => {
       const sampleFile = join(testWorkspace, "unsupported.xyz");
       writeFileSync(sampleFile, "sample content", "utf-8");
 
-      const tool = new LspTool();
+      const tool = new LspTool({
+        servers: {
+          typescript: {
+            command: "typescript-language-server",
+            extensions: [".ts"],
+          },
+        },
+      });
       const context = {
         threadId: "test-thread",
         toolCallId: "call_lsp_no_ext",
@@ -1927,7 +1934,41 @@ describe("Built-in File & Shell Tools", () => {
       );
 
       expect(result).toContain("LSP error:");
-      expect(result).toContain('No LSP server configured for ".xyz" files');
+      expect(result).toContain('No LSP server configured for ".xyz" files.');
+      await tool.dispose();
+    });
+
+    it("returns error message when position is missing for position-sensitive operations", async () => {
+      const sampleFile = join(testWorkspace, "sample.ts");
+      writeFileSync(sampleFile, "const a = 1;", "utf-8");
+
+      const tool = new LspTool({
+        servers: {
+          typescript: {
+            command: "echo",
+            extensions: [".ts"],
+          },
+        },
+      });
+      const context = {
+        threadId: "test-thread",
+        toolCallId: "call_lsp_missing_pos",
+        workingDirectory: testWorkspace,
+      };
+
+      const result = await tool.execute(
+        {
+          operation: "hover",
+          filePath: "sample.ts",
+        },
+        context,
+      );
+
+      expect(result).toContain("LSP error:");
+      expect(result).toContain(
+        '"line" and "character" are required for "hover"',
+      );
+      await tool.dispose();
     });
 
     it("returns error message when LSP server binary is not found on PATH", async () => {
@@ -1935,9 +1976,11 @@ describe("Built-in File & Shell Tools", () => {
       writeFileSync(sampleFile, "content", "utf-8");
 
       const tool = new LspTool({
-        custom: {
-          command: "nonexistent_binary_for_custom_lsp_12345",
-          extensions: [".custom"],
+        servers: {
+          custom: {
+            command: "nonexistent_binary_for_custom_lsp_12345",
+            extensions: [".custom"],
+          },
         },
       });
 
@@ -1959,11 +2002,13 @@ describe("Built-in File & Shell Tools", () => {
 
       expect(result).toContain("LSP error:");
       expect(result).toContain("was not found on PATH");
+      await tool.dispose();
     });
 
-    it("executes end-to-end hover and handles full JSON-RPC lifecycle with mock LSP server", async () => {
+    it("executes end-to-end hover and reuses persistent process pool", async () => {
       const mockServerScript = `
 let buf = Buffer.alloc(0);
+let hoverCount = 0;
 function sendMsg(msg) {
   const body = JSON.stringify(msg);
   process.stdout.write("Content-Length: " + Buffer.byteLength(body, "utf8") + "\\r\\n\\r\\n" + body);
@@ -1985,7 +2030,12 @@ process.stdin.on("data", chunk => {
     if (body.method === "initialize") {
       sendMsg({ jsonrpc: "2.0", id: body.id, result: { capabilities: {} } });
     } else if (body.method === "textDocument/hover") {
-      sendMsg({ jsonrpc: "2.0", id: body.id, result: { contents: { kind: "plaintext", value: "const answer: 42" } } });
+      hoverCount++;
+      sendMsg({
+        jsonrpc: "2.0",
+        id: body.id,
+        result: { contents: { kind: "plaintext", value: "const answer: 42 (call " + hoverCount + ")" } }
+      });
     } else if (body.method === "shutdown") {
       sendMsg({ jsonrpc: "2.0", id: body.id, result: null });
     } else if (body.method === "exit") {
@@ -2001,20 +2051,22 @@ process.stdin.on("data", chunk => {
       writeFileSync(targetFile, "const x = 42;", "utf-8");
 
       const tool = new LspTool({
-        mock: {
-          command: "node",
-          args: [scriptPath],
-          extensions: [".mock"],
+        servers: {
+          mock: {
+            command: "node",
+            args: [scriptPath],
+            extensions: [".mock"],
+          },
         },
       });
 
       const context = {
         threadId: "test-thread",
-        toolCallId: "call_mock_lsp_hover",
+        toolCallId: "call_mock_lsp_hover_1",
         workingDirectory: testWorkspace,
       };
 
-      const result = await tool.execute(
+      const result1 = await tool.execute(
         {
           operation: "hover",
           filePath: "main.mock",
@@ -2024,15 +2076,42 @@ process.stdin.on("data", chunk => {
         context,
       );
 
-      expect(result).not.toContain("LSP error:");
-      expect(result).toContain("**Hover**");
-      expect(result).toContain("const answer: 42");
+      expect(result1).not.toContain("LSP error:");
+      expect(result1).toContain("**Hover**");
+      expect(result1).toContain("const answer: 42 (call 1)");
+
+      // Second invocation reuses the warm server
+      const result2 = await tool.execute(
+        {
+          operation: "hover",
+          filePath: "main.mock",
+          line: 1,
+          character: 7,
+        },
+        context,
+      );
+
+      expect(result2).not.toContain("LSP error:");
+      expect(result2).toContain("const answer: 42 (call 2)");
+
+      await tool.dispose();
+
+      // After dispose, calls return error
+      const result3 = await tool.execute(
+        {
+          operation: "hover",
+          filePath: "main.mock",
+          line: 1,
+          character: 7,
+        },
+        context,
+      );
+      expect(result3).toContain("LSP error:");
     });
 
-    it("retries and recovers when server returns ContentModified (-32801)", async () => {
+    it("executes diagnostics with smart severity precedence", async () => {
       const mockServerScript = `
 let buf = Buffer.alloc(0);
-let hoverAttempts = 0;
 function sendMsg(msg) {
   const body = JSON.stringify(msg);
   process.stdout.write("Content-Length: " + Buffer.byteLength(body, "utf8") + "\\r\\n\\r\\n" + body);
@@ -2053,21 +2132,38 @@ process.stdin.on("data", chunk => {
 
     if (body.method === "initialize") {
       sendMsg({ jsonrpc: "2.0", id: body.id, result: { capabilities: {} } });
-    } else if (body.method === "textDocument/hover") {
-      hoverAttempts++;
-      if (hoverAttempts === 1) {
-        sendMsg({
-          jsonrpc: "2.0",
-          id: body.id,
-          error: { code: -32801, message: "Document was modified concurrently" }
-        });
-      } else {
-        sendMsg({
-          jsonrpc: "2.0",
-          id: body.id,
-          result: { contents: { kind: "plaintext", value: "recovered after retry" } }
-        });
-      }
+    } else if (body.method === "textDocument/didSave" || body.method === "textDocument/didOpen") {
+      const fileUri = body.params.textDocument.uri;
+      sendMsg({
+        jsonrpc: "2.0",
+        method: "textDocument/publishDiagnostics",
+        params: {
+          uri: fileUri,
+          diagnostics: [
+            {
+              severity: 1,
+              message: "Type 'number' is not assignable to type 'string'.",
+              source: "typescript",
+              code: 2322,
+              range: { start: { line: 4, character: 2 }, end: { line: 4, character: 10 } }
+            },
+            {
+              severity: 2,
+              message: "'unusedVar' is declared but its value is never read.",
+              source: "typescript",
+              code: 6133,
+              range: { start: { line: 1, character: 6 }, end: { line: 1, character: 15 } }
+            },
+            {
+              severity: 2,
+              message: "'otherVar' is declared but never read.",
+              source: "typescript",
+              code: 6133,
+              range: { start: { line: 2, character: 6 }, end: { line: 2, character: 14 } }
+            }
+          ]
+        }
+      });
     } else if (body.method === "shutdown") {
       sendMsg({ jsonrpc: "2.0", id: body.id, result: null });
     } else if (body.method === "exit") {
@@ -2076,39 +2172,177 @@ process.stdin.on("data", chunk => {
   }
 });
 `;
-      const scriptPath = join(testWorkspace, "mock-retry-server.js");
+      const scriptPath = join(testWorkspace, "mock-diag-server.js");
       writeFileSync(scriptPath, mockServerScript, "utf-8");
 
-      const targetFile = join(testWorkspace, "retry.mock");
-      writeFileSync(targetFile, "const x = 100;", "utf-8");
+      const targetFile = join(testWorkspace, "error.mock");
+      writeFileSync(targetFile, "let a: string = 123;", "utf-8");
 
       const tool = new LspTool({
-        mock: {
-          command: "node",
-          args: [scriptPath],
-          extensions: [".mock"],
+        servers: {
+          mock: {
+            command: "node",
+            args: [scriptPath],
+            extensions: [".mock"],
+          },
         },
       });
 
       const context = {
         threadId: "test-thread",
-        toolCallId: "call_mock_lsp_retry",
+        toolCallId: "call_mock_lsp_diag",
         workingDirectory: testWorkspace,
       };
 
       const result = await tool.execute(
         {
-          operation: "hover",
-          filePath: "retry.mock",
-          line: 1,
-          character: 1,
+          operation: "diagnostics",
+          filePath: "error.mock",
         },
         context,
       );
 
       expect(result).not.toContain("LSP error:");
-      expect(result).toContain("**Hover**");
-      expect(result).toContain("recovered after retry");
+      expect(result).toContain("**Diagnostics** — `error.mock`");
+      expect(result).toContain("**Error** (1)");
+      expect(result).toContain(
+        "`5:3` [typescript/2322] Type 'number' is not assignable to type 'string'.",
+      );
+      expect(result).toContain("_(also has 2 warnings)_");
+
+      await tool.dispose();
+    });
+
+    it("executes goToDefinition, documentSymbol, and workspaceSymbol operations", async () => {
+      const mockServerScript = `
+let buf = Buffer.alloc(0);
+function sendMsg(msg) {
+  const body = JSON.stringify(msg);
+  process.stdout.write("Content-Length: " + Buffer.byteLength(body, "utf8") + "\\r\\n\\r\\n" + body);
+}
+process.stdin.on("data", chunk => {
+  buf = Buffer.concat([buf, chunk]);
+  while (true) {
+    const idx = buf.indexOf("\\r\\n\\r\\n");
+    if (idx === -1) break;
+    const header = buf.slice(0, idx).toString("ascii");
+    const m = /content-length:\\s*(\\d+)/i.exec(header);
+    if (!m) { buf = Buffer.alloc(0); break; }
+    const len = parseInt(m[1], 10);
+    const bodyStart = idx + 4;
+    if (buf.length < bodyStart + len) break;
+    const body = JSON.parse(buf.slice(bodyStart, bodyStart + len).toString("utf8"));
+    buf = buf.slice(bodyStart + len);
+
+    if (body.method === "initialize") {
+      sendMsg({ jsonrpc: "2.0", id: body.id, result: { capabilities: {} } });
+    } else if (body.method === "textDocument/definition") {
+      sendMsg({
+        jsonrpc: "2.0",
+        id: body.id,
+        result: [{
+          uri: body.params.textDocument.uri,
+          range: { start: { line: 0, character: 9 }, end: { line: 0, character: 17 } }
+        }]
+      });
+    } else if (body.method === "textDocument/documentSymbol") {
+      sendMsg({
+        jsonrpc: "2.0",
+        id: body.id,
+        result: [{
+          name: "calculateTotal",
+          kind: 12,
+          range: { start: { line: 0, character: 0 }, end: { line: 5, character: 1 } },
+          selectionRange: { start: { line: 0, character: 9 }, end: { line: 0, character: 23 } }
+        }]
+      });
+    } else if (body.method === "workspace/symbol") {
+      sendMsg({
+        jsonrpc: "2.0",
+        id: body.id,
+        result: [{
+          name: "calculateTotal",
+          kind: 12,
+          location: {
+            uri: body.params?.query ? "file:///workspace/lib.mock" : "file:///workspace/app.mock",
+            range: { start: { line: 0, character: 9 }, end: { line: 0, character: 23 } }
+          }
+        }]
+      });
+    } else if (body.method === "shutdown") {
+      sendMsg({ jsonrpc: "2.0", id: body.id, result: null });
+    } else if (body.method === "exit") {
+      process.exit(0);
+    }
+  }
+});
+`;
+      const scriptPath = join(testWorkspace, "mock-nav-server.js");
+      writeFileSync(scriptPath, mockServerScript, "utf-8");
+
+      const targetFile = join(testWorkspace, "symbols.mock");
+      writeFileSync(
+        targetFile,
+        "function calculateTotal() { return 100; }",
+        "utf-8",
+      );
+
+      const tool = new LspTool({
+        servers: {
+          mock: {
+            command: "node",
+            args: [scriptPath],
+            extensions: [".mock"],
+          },
+        },
+      });
+
+      const context = {
+        threadId: "test-thread",
+        toolCallId: "call_mock_lsp_nav",
+        workingDirectory: testWorkspace,
+      };
+
+      // 1. Definition
+      const defResult = await tool.execute(
+        {
+          operation: "goToDefinition",
+          filePath: "symbols.mock",
+          line: 1,
+          character: 15,
+        },
+        context,
+      );
+      expect(defResult).not.toContain("LSP error:");
+      expect(defResult).toContain("**Definition** (1)");
+      expect(defResult).toContain("`symbols.mock:1:10`");
+
+      // 2. Document Symbol
+      const docSymResult = await tool.execute(
+        {
+          operation: "documentSymbol",
+          filePath: "symbols.mock",
+        },
+        context,
+      );
+      expect(docSymResult).not.toContain("LSP error:");
+      expect(docSymResult).toContain("**Document Symbols** (1)");
+      expect(docSymResult).toContain("`calculateTotal` (Function) — 1:10");
+
+      // 3. Workspace Symbol
+      const wsSymResult = await tool.execute(
+        {
+          operation: "workspaceSymbol",
+          filePath: "symbols.mock",
+          query: "calculate",
+        },
+        context,
+      );
+      expect(wsSymResult).not.toContain("LSP error:");
+      expect(wsSymResult).toContain("**Workspace Symbols** (1)");
+      expect(wsSymResult).toContain("`calculateTotal` (Function)");
+
+      await tool.dispose();
     });
   });
 });

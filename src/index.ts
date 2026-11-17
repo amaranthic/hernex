@@ -88,9 +88,13 @@ export {
   defaultRetentionTtlMs,
   defaultMaxRetainedTasks,
   LspTool,
-  defaultLspConfig,
-  DEFAULT_LSP_TIMEOUT_MS,
-  runLspRequest,
+  LspProcessPool,
+  LspDiagnosticSeverity,
+  formatDiagnostics,
+  formatHover,
+  formatLocations,
+  formatDocumentSymbols,
+  formatWorkspaceSymbols,
 } from "./tools/index.js";
 
 export type {
@@ -126,11 +130,14 @@ export type {
   SearchTimeFilter,
   SafeSearchLevel,
   LspInput,
-  LspConfig,
+  LspToolConfig,
   LspServerConfig,
+  LspServersConfig,
   LspOperation,
   LspRequestOptions,
-  LspResult,
+  LspDiagnostic,
+  LspDiagnosticSeverityValue,
+  LspPoolResult,
 } from "./tools/index.js";
 
 // Threads & Stores

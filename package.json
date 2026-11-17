@@ -1,6 +1,6 @@
 {
   "name": "@amaranthic/hernex",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "Unified AI agent runtime, microkernel engine, and tool harnesses built on Vercel AI SDK",
   "type": "module",
   "main": "./dist/index.js",
@@ -60,6 +60,7 @@
     "ai": "7.0.148",
     "ipaddr.js": "2.5.0",
     "turndown": "7.2.5",
+    "vscode-jsonrpc": "10.0.0",
     "zod": "4.6.7"
   },
   "devDependencies": {

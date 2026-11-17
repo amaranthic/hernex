@@ -6,6 +6,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.0] - 2026-11-17
+
+### Summary
+
+Version `0.8.0` revamps the Language Server Protocol (LSP) intelligence subsystem from the ground up. Replaces per-call server spawning with a persistent in-memory process pool (`LspProcessPool`) backed by `vscode-jsonrpc`. `LspTool` acts as a pure orchestrator requiring explicit server configuration, eliminating hardcoded ambient defaults. Delivers kernel-grade process safety (zero zombie processes, signal hooks, idle timeout teardown, and crash circuit breakers) and smart diagnostic severity precedence formatting.
+
+---
+
+### Breaking Changes
+
+- **Explicit Server Configuration Required on `LspTool`**:
+  - `new LspTool()` no longer provides ambient built-in servers (`defaultLspConfig` has been removed).
+  - Callers must pass an explicit configuration object: `new LspTool({ servers: { typescript: { command: "typescript-language-server", args: ["--stdio"], extensions: [".ts", ".tsx"] } } })`.
+- **Removed Legacy Exports**:
+  - Removed `defaultLspConfig`, `runLspRequest`, `DEFAULT_LSP_TIMEOUT_MS`, `LspConfig`, and `LspResult` from `@amaranthic/hernex`.
+  - Replaced by `LspTool`, `LspProcessPool`, `LspDiagnosticSeverity`, and types `LspToolConfig`, `LspServerConfig`, `LspServersConfig`, `LspOperation`, `LspRequestOptions`, `LspDiagnostic`, `LspDiagnosticSeverityValue`, `LspPoolResult`.
+- **Deleted Internal Legacy Runner**:
+  - Completely removed the 1,700+ line custom JSON-RPC wire parser at `src/tools/internal/lsp.ts`.
+
+---
+
+### New Features
+
+- **Persistent Process Pool (`src/lsp/LspProcessPool.ts`)**:
+  - Persistent server instances keyed by server name and working directory with lazy startup.
+  - Automatic idle teardown (default 5 minutes, configurable via `idleTimeoutMs`) to reclaim system resources.
+  - Crash circuit breaker with a hard cap of 3 consecutive crashes before opening, preventing runaway process respawns.
+  - Battle-hardened process safety: module-level PID registry with hooks on `process.on("exit")`, `SIGINT`, `SIGTERM`, and `beforeExit` to guarantee zero zombie processes.
+- **Battle-Tested Wire Protocol (`src/lsp/LspClient.ts`)**:
+  - Implemented over standard I/O streams using `vscode-jsonrpc` (`^10.0.0`).
+  - Graceful teardown protocol: sends LSP `shutdown` request followed by `exit` notification, a 2-second grace period, and SIGKILL escalation if still active.
+  - Immediate spawn error handling to prevent unhandled node event errors when binaries are missing from `PATH`.
+- **Smart Diagnostic Severity Precedence (`src/lsp/formatters.ts`)**:
+  - Hierarchical output formatting: Errors take precedence over Warnings, which take precedence over Info/Hints.
+  - Summarizes lower-priority tiers with count notes (e.g. `_(also has 2 warnings)_`).
+  - Output capped at 5 items per category with overflow annotations and clean formatting without emojis.
+- **Streamlined Operation Coordinates**:
+  - `diagnostics`, `documentSymbol`, and `workspaceSymbol` no longer require dummy `line` or `character` parameters.
+  - Only position-sensitive operations (`hover`, `goToDefinition`, `goToImplementation`, `findReferences`) require 1-based `line` and `character`.
+  - `workspaceSymbol` supports an optional `query?: string` parameter.
+
+---
+
 ## [0.7.1] - 2026-11-16
 
 ### Summary
